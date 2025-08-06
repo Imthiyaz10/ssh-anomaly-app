@@ -1,56 +1,55 @@
 import streamlit as st
 import pandas as pd
-import re
 from sklearn.ensemble import IsolationForest
+from io import StringIO
+import re
 
-st.title("🚨 SSH Log Anomaly Detector")
+# Page config
+st.set_page_config(page_title="SSH Log Anomaly Detector", layout="centered")
 
-uploaded_file = st.file_uploader("Upload SSH log file (.txt)", type=["txt"])
+# Title and instructions
+st.title("🛡️ SSH Log Anomaly Detection Tool")
+st.write("Upload your SSH log file (.log or .txt) to detect suspicious login activity.")
 
-if uploaded_file is not None:
-    # Read log lines
-    logs = uploaded_file.read().decode("utf-8").splitlines()
+# File uploader
+uploaded_file = st.file_uploader("📤 Upload SSH log file", type=["log", "txt"])
 
-    data = []
-    pattern = r'(\w+ \d+ \d+:\d+:\d+) server sshd\[\d+\]: (\w+) password for (\w+) from ([\d\.]+) port (\d+) ssh2'
+if uploaded_file:
+    try:
+        content = StringIO(uploaded_file.getvalue().decode("utf-8"))
+        log_lines = content.readlines()
 
-    for line in logs:
-        match = re.match(pattern, line)
-        if match:
-            timestamp, result, user, ip, port = match.groups()
-            hour = int(timestamp.split()[2].split(":")[0])
-            data.append({
-                'timestamp': timestamp,
-                'user': user,
-                'ip': ip,
-                'port': int(port),
-                'hour': hour,
-                'result': 1 if result == 'Accepted' else 0
-            })
+        # Parse log lines using regex
+        data = []
+        for line in log_lines:
+            if "Failed password" in line:
+                match = re.search(r'Failed password.* from ([\d\.]+) .* (\d{2}):', line)
+                if match:
+                    ip = match.group(1)
+                    hour = int(match.group(2))
+                    data.append({"IP": ip, "Hour": hour})
 
-    if not data:
-        st.error("❌ Could not parse any valid SSH log lines.")
-    else:
-        df = pd.DataFrame(data)
+        if len(data) == 0:
+            st.error("❌ Could not parse any valid SSH log lines.")
+        else:
+            df = pd.DataFrame(data)
+            st.subheader("📝 Parsed Failed Login Attempts")
+            st.dataframe(df)
 
-        # Encode categories
-        df_encoded = df.copy()
-        df_encoded['user'] = df['user'].astype('category').cat.codes
-        df_encoded['ip'] = df['ip'].astype('category').cat.codes
+            # Anomaly detection
+            model = IsolationForest(contamination=0.1, random_state=42)
+            df["anomaly"] = model.fit_predict(df[["Hour"]])
+            df["Status"] = df["anomaly"].map({1: "Normal", -1: "Anomaly"})
 
-        # Train Isolation Forest model
-        model = IsolationForest(n_estimators=100, contamination=0.1, random_state=42)
-        df['anomaly'] = model.fit_predict(df_encoded[['user', 'ip', 'port', 'hour', 'result']])
+            st.subheader("🚨 Detection Results")
+            st.dataframe(df)
 
-        # Display results
-        st.subheader("📄 Full SSH Log Data")
-        st.dataframe(df)
+            anomalies = df[df["Status"] == "Anomaly"]
+            st.markdown(f"**🔎 Total Anomalies Found:** {len(anomalies)}")
 
-        # Show anomalies
-        anomalies = df[df['anomaly'] == -1]
-        st.subheader("⚠️ Detected Anomalies")
-        st.dataframe(anomalies)
-
-        # Download anomalies
-        csv = anomalies.to_csv(index=False).encode("utf-8")
-        st.download_button("Download Anomalies CSV", data=csv, file_name="anomalies.csv", mime="text/csv")
+            # Download button
+            csv = df.to_csv(index=False).encode("utf-8")
+            st.download_button("⬇️ Download Anomaly Report", csv, "anomaly_report.csv", "text/csv")
+    
+    except Exception as e:
+        st.error(f"❌ Something went wrong: {e}")
