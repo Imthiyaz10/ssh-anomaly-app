@@ -19,15 +19,22 @@ if uploaded_file:
         content = StringIO(uploaded_file.getvalue().decode("utf-8"))
         log_lines = content.readlines()
 
-        # Parse log lines using regex
+        # Debug: show first few lines of uploaded log
+        st.subheader("📄 Raw Log Lines (First 10)")
+        st.text("".join(log_lines[:10]))
+
+        # Parse log lines
         data = []
         for line in log_lines:
             if "Failed password" in line:
+                st.success(f"✅ Found 'Failed password' line:\n{line.strip()}")
                 match = re.search(r'Failed password.* from ([\d\.]+) .* (\d{2}):', line)
                 if match:
                     ip = match.group(1)
                     hour = int(match.group(2))
                     data.append({"IP": ip, "Hour": hour})
+                else:
+                    st.warning(f"⚠️ Regex failed on line:\n{line.strip()}")
 
         if len(data) == 0:
             st.error("❌ Could not parse any valid SSH log lines.")
@@ -50,6 +57,6 @@ if uploaded_file:
             # Download button
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button("⬇️ Download Anomaly Report", csv, "anomaly_report.csv", "text/csv")
-    
+
     except Exception as e:
         st.error(f"❌ Something went wrong: {e}")
