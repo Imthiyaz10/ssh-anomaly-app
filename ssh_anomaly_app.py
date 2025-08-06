@@ -28,7 +28,7 @@ if uploaded_file:
         for line in log_lines:
             if "Failed password" in line:
                 st.success(f"✅ Found 'Failed password' line:\n{line.strip()}")
-                match = re.search(r'Failed password.* from ([\d\.]+) .* (\d{2}):', line)
+                match = re.search(r'from ([\d\.]+).*?(\d{2}):\d{2}:\d{2}', line)
                 if match:
                     ip = match.group(1)
                     hour = int(match.group(2))
